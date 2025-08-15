@@ -1,14 +1,14 @@
 {
-  "functions": {
-    "api/collect-data.js": {
-      "runtime": "@vercel/node@3.0.7"
-    },
-    "api/meltwater-webhook.js": {
-      "runtime": "@vercel/node@3.0.7"
-    },
-    "api/meltwater-csv.js": {
-      "runtime": "@vercel/node@3.0.7"
+  "version": 2,
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
     }
-  }
+  ]
 }
 
