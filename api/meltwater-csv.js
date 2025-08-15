@@ -201,5 +201,6 @@ async function updateSheetsWithMeltwaterData(config, data) {
   
   return await response.json();
 }
-module.exports.config = { runtime: 'nodejs20.x' };
+handler.config = { runtime: 'nodejs20.x' };
+
 
