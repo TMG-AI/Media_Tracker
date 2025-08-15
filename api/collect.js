@@ -1,5 +1,6 @@
 // Serverless function for data collection including Meltwater integration
-module.exports = async function handler(req, res) {
+
+export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -89,12 +90,13 @@ module.exports = async function handler(req, res) {
 // Twitter data collection
 async function collectTwitterData(config) {
   const query = buildTwitterQuery(config.searchTerms, config.clientName);
+  
   const params = new URLSearchParams({
     query: query,
-    max_results: '50',
     'tweet.fields': 'public_metrics,created_at,author_id',
-    'user.fields': 'public_metrics,username,name',
-    'expansions': 'author_id'
+    'user.fields': 'public_metrics,username',
+    'expansions': 'author_id',
+    'max_results': '50'
   });
 
   const response = await fetch(`https://api.twitter.com/2/tweets/search/recent?${params}`, {
@@ -116,7 +118,6 @@ async function collectTwitterData(config) {
 async function collectMeltwaterData(config) {
   const query = buildMeltwaterQuery(config.searchTerms, config.clientName);
   
-  // Meltwater API endpoint (this would be your actual Meltwater API endpoint)
   const params = new URLSearchParams({
     q: query,
     limit: '50',
@@ -145,13 +146,13 @@ async function collectNewsData(config) {
   const params = new URLSearchParams({
     q: query,
     apiKey: config.googleApiKey,
-    pageSize: '20',
     sortBy: 'publishedAt',
+    pageSize: '50',
     language: 'en'
   });
 
   const response = await fetch(`https://newsapi.org/v2/everything?${params}`);
-  
+
   if (!response.ok) {
     throw new Error(`News API error: ${response.status} ${response.statusText}`);
   }
@@ -230,18 +231,7 @@ async function updateGoogleSheets(config, twitterData, newsData, meltwaterData) 
 // Helper functions
 function buildTwitterQuery(searchTerms, clientName) {
   const terms = searchTerms.split(',').map(t => t.trim());
-  const queries = terms.map(term => `"${term}"`);
-  
-  if (clientName) {
-    queries.push(`"${clientName}"`);
-  }
-  
-  return queries.join(' OR ') + ' -is:retweet lang:en';
-}
-
-function buildNewsQuery(searchTerms, clientName) {
-  const terms = searchTerms.split(',').map(t => t.trim());
-  let query = terms.join(' OR ');
+  let query = terms.map(term => `"${term}"`).join(' OR ');
   
   if (clientName) {
     query += ` OR "${clientName}"`;
@@ -250,28 +240,39 @@ function buildNewsQuery(searchTerms, clientName) {
   return query;
 }
 
+function buildNewsQuery(searchTerms, clientName) {
+  const terms = searchTerms.split(',').map(t => t.trim());
+  let query = terms.join(' OR ');
+  
+  if (clientName) {
+    query += ` OR ${clientName}`;
+  }
+  
+  return query;
+}
+
 function formatTwitterData(data) {
-  if (!data.data || !data.includes?.users) {
+  if (!data.data) {
     return [];
   }
 
-  const users = data.includes.users.reduce((acc, user) => {
-    acc[user.id] = user;
-    return acc;
-  }, {});
+  const users = {};
+  if (data.includes?.users) {
+    data.includes.users.forEach(user => {
+      users[user.id] = user;
+    });
+  }
 
   return data.data.map(tweet => {
-    const author = users[tweet.author_id];
+    const user = users[tweet.author_id] || {};
     return {
       id: tweet.id,
-      link: `https://x.com/${author.username}/status/${tweet.id}`,
+      link: `https://twitter.com/i/status/${tweet.id}`,
       views: tweet.public_metrics?.impression_count || 0,
-      handle: `@${author.username}`,
-      followers: author.public_metrics?.followers_count || 0,
-      content: tweet.text,
-      timestamp: tweet.created_at,
-      retweets: tweet.public_metrics?.retweet_count || 0,
-      likes: tweet.public_metrics?.like_count || 0
+      handle: user.username || 'unknown',
+      followers: user.public_metrics?.followers_count || 0,
+      content: tweet.text || '',
+      timestamp: tweet.created_at || new Date().toISOString()
     };
   });
 }
@@ -281,29 +282,27 @@ function formatNewsData(data) {
     return [];
   }
 
-  return data.articles
-    .filter(article => article.title && article.url)
-    .map(article => ({
-      id: `article_${Date.now()}_${Math.random()}`,
-      publication: article.source?.name || 'Unknown',
-      headline: article.title,
-      link: article.url,
-      reporter: article.author || 'Unknown',
-      timestamp: article.publishedAt,
-      description: article.description,
-      notes: ''
-    }));
+  return data.articles.map(article => ({
+    id: `news_${Date.now()}_${Math.random()}`,
+    publication: article.source?.name || 'Unknown',
+    headline: article.title || 'No title',
+    link: article.url || '',
+    reporter: article.author || 'Unknown',
+    timestamp: article.publishedAt || new Date().toISOString(),
+    content: article.description || '',
+    notes: ''
+  }));
 }
 
 function formatTwitterDataForSheets(twitterData) {
   const headers = ['Link', 'Views', 'Handle', 'Followers', 'Content', 'Timestamp'];
-  const rows = twitterData.map(post => [
-    post.link,
-    post.views,
-    post.handle,
-    post.followers,
-    post.content.substring(0, 100) + (post.content.length > 100 ? '...' : ''),
-    new Date(post.timestamp).toLocaleString()
+  const rows = twitterData.map(item => [
+    item.link,
+    item.views,
+    item.handle,
+    item.followers,
+    item.content,
+    new Date(item.timestamp).toLocaleString()
   ]);
   
   return [headers, ...rows];
@@ -311,19 +310,17 @@ function formatTwitterDataForSheets(twitterData) {
 
 function formatNewsDataForSheets(newsData) {
   const headers = ['Publication', 'Headline', 'Link', 'Reporter', 'Timestamp', 'Notes'];
-  const rows = newsData.map(article => [
-    article.publication,
-    article.headline,
-    article.link,
-    article.reporter,
-    new Date(article.timestamp).toLocaleString(),
-    article.notes
+  const rows = newsData.map(item => [
+    item.publication,
+    item.headline,
+    item.link,
+    item.reporter,
+    new Date(item.timestamp).toLocaleString(),
+    item.notes
   ]);
   
   return [headers, ...rows];
 }
-
-
 
 // Meltwater helper functions
 function buildMeltwaterQuery(searchTerms, clientName) {
