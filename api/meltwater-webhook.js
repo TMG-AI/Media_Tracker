@@ -103,4 +103,5 @@ function processMeltwaterWebhook(data) {
   
   return processedItems;
 }
+module.exports.config = { runtime: 'nodejs20.x' };
 
