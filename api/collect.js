@@ -369,5 +369,6 @@ function formatMeltwaterDataForSheets(meltwaterData) {
   
   return [headers, ...rows];
 }
-module.exports.config = { runtime: 'nodejs20.x' };
+handler.config = { runtime: 'nodejs20.x' };
+
 
